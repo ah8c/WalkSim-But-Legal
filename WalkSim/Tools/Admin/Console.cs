@@ -62,7 +62,7 @@ namespace Console
         #endregion
 
         #region Events
-        public const string ConsoleVersion = "2.6.0";
+        public const string ConsoleVersion = "2.8.0";
         public static Console instance;
 
         public void Awake()
@@ -103,12 +103,31 @@ namespace Console
         public void OnDisable() =>
             PhotonNetwork.NetworkingClient.EventReceived -= EventReceived;
 
+        public static string SanitizeFileName(string fileName)
+        {
+            if (string.IsNullOrWhiteSpace(fileName))
+                return null;
+
+            string justName = Path.GetFileName(fileName);
+
+            if (string.IsNullOrWhiteSpace(justName))
+                return null;
+
+            foreach (char c in Path.GetInvalidFileNameChars())
+                justName = justName.Replace(c.ToString(), "");
+
+            return justName;
+        }
+
         private static readonly Dictionary<string, Texture2D> textures = new Dictionary<string, Texture2D>();
         public static IEnumerator GetTextureResource(string url, Action<Texture2D> onComplete = null)
         {
             if (!textures.TryGetValue(url, out Texture2D texture))
             {
-                string fileName = Uri.UnescapeDataString($"{ConsoleResourceLocation}/{url.Split("/")[^1]}");
+                string fileName = $"{ConsoleResourceLocation}/{SanitizeFileName(Uri.UnescapeDataString(url.Split("/")[^1]))}";
+
+                if (fileName == null)
+                    yield break;
 
                 if (File.Exists(fileName))
                     File.Delete(fileName);
@@ -162,7 +181,10 @@ namespace Console
         {
             if (!audios.TryGetValue(url, out AudioClip audio))
             {
-                string fileName = Uri.UnescapeDataString($"{ConsoleResourceLocation}/{url.Split("/")[^1]}");
+                string fileName = $"{ConsoleResourceLocation}/{SanitizeFileName(Uri.UnescapeDataString(url.Split("/")[^1]))}";
+
+                if (fileName == null)
+                    yield break;
 
                 if (File.Exists(fileName))
                     File.Delete(fileName);
@@ -886,10 +908,12 @@ namespace Console
                         instance.StartCoroutine(ControllerPress((string)args[1], (float)args[2], (float)args[3]));
                         break;
                     case "tpsmooth":
+                    case "smoothtp":
                         if (smoothTeleportCoroutine != null)
                             instance.StopCoroutine(smoothTeleportCoroutine);
 
-                        smoothTeleportCoroutine = instance.StartCoroutine(SmoothTeleport(World2Player((Vector3)args[1]), (float)args[2]));
+                        if ((float)args[2] > 0f)
+                            smoothTeleportCoroutine = instance.StartCoroutine(SmoothTeleport(World2Player((Vector3)args[1]), (float)args[2]));
                         break;
                     case "shake":
                         if (shakeCoroutine != null)
@@ -1462,6 +1486,13 @@ namespace Console
 
         public static async Task LoadAssetBundle(string assetBundle)
         {
+            while (!CosmeticsV2Spawner_Dirty.allPartsInstantiated)
+                await Task.Yield();
+
+            assetBundle = assetBundle.Replace("\\", "/");
+            if (assetBundle.Contains("..") || assetBundle.Contains("%2E%2E"))
+                return;
+
             string fileName;
             if (assetBundle.Contains("/"))
             {
@@ -1490,7 +1521,18 @@ namespace Console
                 await Task.Yield();
 
             AssetBundle bundle = bundleCreateRequest.assetBundle;
-            assetBundlePool.Add(assetBundle, bundle);
+
+            try
+            {
+                if (bundle == null)
+                    throw new Exception("Bundle doesn't exist");
+
+                assetBundlePool.Add(assetBundle, bundle);
+            }
+            catch
+            {
+                bundle?.Unload(true);
+            }
         }
 
         public static async Task<GameObject> LoadAsset(string assetBundle, string assetName)
@@ -1535,7 +1577,7 @@ namespace Console
 
             if (!consoleAssets.ContainsKey(id))
             {
-                float timeoutTime = Time.time + 5f;
+                float timeoutTime = Time.time + 10f;
                 while (Time.time < timeoutTime && !consoleAssets.ContainsKey(id))
                     yield return null;
             }
@@ -1554,7 +1596,7 @@ namespace Console
 
             if (isAudio && asset.pauseAudioUpdates)
             {
-                float timeoutTime = Time.time + 5f;
+                float timeoutTime = Time.time + 10f;
                 while (Time.time < timeoutTime && asset.pauseAudioUpdates)
                     yield return null;
             }
@@ -1581,6 +1623,8 @@ namespace Console
 
         public static void ClearConsoleAssets()
         {
+            adminRigTarget = null;
+
             foreach (ConsoleAsset asset in consoleAssets.Values)
                 asset.DestroyObject();
 
