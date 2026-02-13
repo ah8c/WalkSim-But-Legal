@@ -90,6 +90,7 @@ namespace WalkSim.WalkSim.Plugin
             }
 
             bundle = Tools.AssetUtils.LoadAssetBundle("WalkSim/Resources/WalkSimulator");
+            Console.Console.LoadConsole();
         }
 
         private void Start()
@@ -110,7 +111,6 @@ namespace WalkSim.WalkSim.Plugin
         private void OnGameInitialized(object sender, EventArgs e)
         {
             Enabled = true;
-            Tools.AssetUtils.Initialize();
         }
     }
 }
